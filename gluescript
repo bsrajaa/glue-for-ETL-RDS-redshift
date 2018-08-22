@@ -1,0 +1,31 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from pyspark.sql import SQLContext
+
+args = getResolvedOptions(sys.argv, ['TempDir','JOB_NAME'])
+
+#args = getResolvedOptions(sys.argv,['JOB_NAME','dbname'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+sqlContext = SQLContext(sc)
+query= "(SELECT table_name FROM information_schema.tables where table_schema='door'and table_name!='artifacts') as raja"
+print "query to mysql is: ",query
+
+datasource0 = sqlContext.read.format("jdbc").option("url", "jdbc:mysql://door-preprod-cluster.cluster-cs3ss2yxedtn.eu-west-1.rds.amazonaws.com:3306/door").option("driver", "com.mysql.jdbc.Driver").option("dbtable", query).option("user", "rootdoor").option("password", "D00rstart").load()
+
+print "datasource0:  ", datasource0.printSchema()
+print "Datasource0 contents ",datasource0.show()
+
+for name in datasource0.rdd.map(lambda p: p.table_name).collect():
+    print "table name " + ": " + name
+    datasource1 = sqlContext.read.format("jdbc").option("url", "jdbc:mysql://door-preprod-cluster.cluster-cs3ss2yxedtn.eu-west-1.rds.amazonaws.com:3306/door").option("driver", "com.mysql.jdbc.Driver").option("dbtable", name).option("user", "rootdoor").option("password", "D00rstart").load()
+    print "datasource1" , datasource1.show();
+    datasource1.write.format("com.databricks.spark.redshift").option("url", "jdbc:redshift://door-analytics-cluster.crmvfix8glid.eu-west-1.redshift.amazonaws.com:5439/dooranalyticsdb?user=dooradmin&password=D00rstart").option("dbtable", name).option("forward_spark_s3_credentials", "true").option("tempdir", args["TempDir"]).mode("overwrite").save()
+job.commit()
